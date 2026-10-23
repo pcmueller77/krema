@@ -11,6 +11,12 @@
 
 set -eu
 
+if [ "${KREMA_FOCUS_TRACE_MODE+x}" != x ] && [ "${KREMA_FOCUS_BASELINE_CAPTURE:-}" = 1 ] && [ "${1##*/}" = krema_launch_in_place_tests ]; then
+    unset KREMA_FOCUS_BASELINE_CAPTURE
+    exec python3 /work/.github/diagnostics/focus_trace.py \
+        --mode off --output "$KREMA_FOCUS_TRACE_OUTPUT" -- "$0" "$@"
+fi
+
 scratch=$(mktemp -d)
 kwin_pid=
 # Must not fail: under set -e a failing kill/wait (KWin already gone) would
@@ -68,7 +74,13 @@ while [ ! -S "$XDG_RUNTIME_DIR/$socket" ]; do
 done
 
 test_status=0
-WAYLAND_DISPLAY="$socket" QT_QPA_PLATFORM=wayland "$@" || test_status=$?
+if [ "${KREMA_FOCUS_TRACE_MODE+x}" = x ] && [ "${1##*/}" = krema_launch_in_place_tests ]; then
+    WAYLAND_DISPLAY="$socket" QT_QPA_PLATFORM=wayland \
+        python3 /work/.github/diagnostics/focus_trace.py \
+        --mode "$KREMA_FOCUS_TRACE_MODE" --output "$KREMA_FOCUS_TRACE_OUTPUT" -- "$@" || test_status=$?
+else
+    WAYLAND_DISPLAY="$socket" QT_QPA_PLATFORM=wayland "$@" || test_status=$?
+fi
 if [ "$test_status" -ne 0 ]; then
     {
         printf 'Test failed (exit %s); last 200 lines of kwin_wayland log:\n' "$test_status"
